@@ -37,15 +37,53 @@ fprintf('Loading BCM-L2-SIM-2 map...\n');
 % ← CHANGE to 'BCM-L2-SIM-4.jpg' to switch back to the previous map
 layout = imread('BCM-L2-SIM-2.jpg');
 
-% Open figure window
-figure('Name', 'BCM-L2-SIM-2 Evacuation — BFS + PSO', 'Position', [50, 50, 950, 800]);
-imshow(layout); hold on;
-set(gca, 'YDir', 'reverse');   % Pixel coords: Y increases downward
-axis on;
-grid on;                        % Show grid lines for easier coordinate reading
-set(gca, 'GridColor', [1 1 0], 'GridAlpha', 0.4, 'GridLineStyle', '--');
-% ← Grid lines are yellow dashes — visible over both black and coloured areas
-% ← To turn grid off: grid off
+% Define max_iter and N here so the graph axes can use them during figure setup.
+% Both are also declared in their proper sections below — all values must match.
+max_iter = 5000;   % hard iteration cap (matches Section 9)
+N        = 80;     % total number of agents (matches Section 6)
+
+% Wider figure: left = simulation map, right = live graph + results panel
+fig = figure('Name', 'BCM-L2-SIM-2 Evacuation — BFS + PSO', 'Position', [30, 30, 1400, 800]);
+
+% Left panel: simulation map (occupies left 60% of figure)
+ax_sim = axes('Position', [0.01 0.02 0.58 0.95]);   % [left bottom width height]
+imshow(layout, 'Parent', ax_sim); hold(ax_sim, 'on');
+set(ax_sim, 'YDir', 'reverse');   % Pixel coords: Y increases downward
+axis(ax_sim, 'on');
+grid(ax_sim, 'on');                       % Grid lines for coordinate reference
+set(ax_sim, 'GridColor', [1 1 0], 'GridAlpha', 0.4, 'GridLineStyle', '--');
+
+% Top-right panel: live evacuated agents graph (occupies right 37%, top half)
+ax_graph = axes('Position', [0.62 0.50 0.37 0.46]);
+title(ax_graph, 'Agents Evacuated', 'FontWeight', 'bold', 'Color', 'w', 'FontSize', 12);
+xlabel(ax_graph, 'Step',  'Color', 'w', 'FontSize', 11);
+ylabel(ax_graph, 'Count', 'Color', 'w', 'FontSize', 11);
+xlim(ax_graph, [0, max_iter]);
+ylim(ax_graph, [0, N]);
+set(ax_graph, 'Color', [0.1 0.1 0.1], 'XColor', 'w', 'YColor', 'w', ...
+    'GridColor', 'w', 'GridAlpha', 0.2, 'FontSize', 10);
+grid(ax_graph, 'on');
+hold(ax_graph, 'on');
+% Dashed line showing total agent count (target)
+plot(ax_graph, [0 max_iter], [N N], 'g--', 'LineWidth', 1.2);
+% Live evacuated count line (updated each iteration)
+h_graph = plot(ax_graph, 0, 0, 'g-', 'LineWidth', 2);
+graph_x = zeros(1, max_iter);   % Pre-allocate iteration x-data
+graph_y = zeros(1, max_iter);   % Pre-allocate evacuated count y-data
+graph_idx = 0;                  % Current fill index
+
+% Bottom-RIGHT results panel — border via axes Box property (no annotation overlay)
+ax_res = axes('Position', [0.62 0.03 0.37 0.43]);
+set(ax_res, ...
+    'Color',     [0.05 0.05 0.05], ...  % Dark background
+    'Box',       'on', ...              % Draw border around axes
+    'LineWidth',  2.5, ...              % Border thickness
+    'XColor',    [1 1 1], ...           % White border (X axis line = left+right sides)
+    'YColor',    [1 1 1], ...           % White border (Y axis line = top+bottom sides)
+    'XTick',     [], ...                % No tick marks on X
+    'YTick',     []);                   % No tick marks on Y
+axis(ax_res, 'on');                     % Keep axis ON so Box border is visible
+title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 13);
 
 [H, W, ~] = size(layout);     % H = image height (rows), W = image width (cols)
 fprintf('  Map size: %d x %d pixels\n', W, H);
@@ -132,15 +170,15 @@ end
 fprintf('  Exit coordinates validated OK\n');
 % ─────────────────────────────────────────────────────────────
 
-% Draw exit markers on the figure
-plot(exits(:,1), exits(:,2), 'go', ...
+% Draw exit markers explicitly on ax_sim (avoids drawing on wrong axes)
+plot(ax_sim, exits(:,1), exits(:,2), 'go', ...
     'MarkerSize', 20, 'MarkerFaceColor', [0 0.9 0], ...
     'MarkerEdgeColor', [0 0.5 0], 'LineWidth', 2, ...
     'DisplayName', 'Exits');
 
-% Label each exit
+% Label each exit on ax_sim
 for e = 1:num_exits
-    text(exits(e,1), exits(e,2) - 22, sprintf('Exit %d', e), ...
+    text(ax_sim, exits(e,1), exits(e,2) - 22, sprintf('Exit %d', e), ...
         'Color', [0 0.6 0], 'FontWeight', 'bold', 'FontSize', 9, ...
         'HorizontalAlignment', 'center');
 end
@@ -292,15 +330,39 @@ fprintf('  Agents placed: %d / %d requested\n', N, 80);
 
 
 %% ============================================================
-%% [SECTION 7] AGENT SPEED (ALL NEUTRAL)
+%% [SECTION 7] AGENT SPEED & RADIUS (FROM RESEARCH PARAMETERS)
 %% ============================================================
-% All agents are identical — same speed, no type distinction.
+% Research reference parameters (SFM):
+%   Walking speed (adult) = 1.47 m/s
+%   Agent radius          = 0.2 m
+%
+% Pixel-to-metre conversion:
+%   map_scale_px_per_m = how many pixels represent 1 metre on this map.
+%   ← CALIBRATE: measure a known distance on the map in pixels,
+%     divide by the real distance in metres.
+%     e.g. if a 10m corridor = 180 pixels → map_scale_px_per_m = 18
+map_scale_px_per_m = 30;        % pixels per metre — adjust to match BCM-L2-SIM-2 scale
+                                 % SIM-2 image is larger (~900px) so scale is higher than SIM-4
 
-agent_speed = 3;    % Matches max_speed_normal = 3 from PSO_Optimization.m
-                    % (PSO_Optimization.m used: normal = 3, elderly = 1.5)
-                    % Since all agents here are neutral, we use the normal speed
+% Simulation time step = pause duration (seconds per iteration)
+step_duration_s    = 0.05;      % seconds per iteration (matches pause(0.05) below)
 
-fprintf('  All %d agents: neutral, speed = %.1f px/step\n', N, agent_speed);
+% Agent speed in pixels per iteration step — derived from research value
+walking_speed_ms   = 1.47;      % m/s — from research (SFM walking speed, adult)
+agent_speed        = walking_speed_ms * map_scale_px_per_m * step_duration_s;
+% → agent_speed = 1.47 × 30 × 0.05 = 2.205 px/step
+
+% Agent radius in pixels — derived from research value
+agent_radius_m     = 0.2;       % metres — from research (SFM agent radius)
+agent_radius_px    = agent_radius_m * map_scale_px_per_m;
+% → agent_radius_px = 0.2 × 30 = 6 px
+% Scatter marker area (points²) ≈ π × radius²  (1 pt ≈ 1 px at screen resolution)
+agent_marker_size  = pi * agent_radius_px^2;
+% → agent_marker_size ≈ 113 points²
+
+fprintf('  Walking speed  : %.2f m/s  →  %.2f px/step\n', walking_speed_ms, agent_speed);
+fprintf('  Agent radius   : %.2f m    →  %.2f px (marker area ≈ %.0f pts²)\n', ...
+    agent_radius_m, agent_radius_px, agent_marker_size);
 
 
 %% ============================================================
@@ -344,11 +406,12 @@ max_iter  = 5000;  % hard iteration cap ← INCREASE for large maps
 %% [SECTION 10] VISUALISATION SETUP
 %% ============================================================
 
-% All agents drawn as cyan scatter dots — neutral, no type distinction
-h_agents = scatter(pos(:,1), pos(:,2), 40, [0 0.8 0.9], 'filled', ...
+% All agents drawn as cyan scatter dots on the simulation axes
+% Marker size = agent_marker_size (derived from 0.2m radius in Section 7)
+h_agents = scatter(ax_sim, pos(:,1), pos(:,2), agent_marker_size, [0 0.8 0.9], 'filled', ...
     'DisplayName', 'Agents');
 
-legend('Exits', 'Agents', ...
+legend(ax_sim, 'Exits', 'Agents', ...
     'Location', 'northoutside', 'Orientation', 'horizontal', 'FontSize', 9);
 
 
@@ -357,13 +420,13 @@ legend('Exits', 'Agents', ...
 %% ============================================================
 
 for t = 3:-1:1
-    title(sprintf('Evacuation begins in %d ...', t), 'FontSize', 16);
+    title(ax_sim, sprintf('Evacuation begins in %d ...', t), 'FontSize', 16);
     pause(1);
 end
 
 start_time = tic;
 fprintf('\n=== EVACUATION STARTED ===\n');
-title('Evacuation in progress...', 'FontSize', 14);
+title(ax_sim, 'Evacuation in progress...', 'FontSize', 14);
 
 
 %% ============================================================
@@ -563,8 +626,14 @@ for iter = 1:max_iter
         set(h_agents, 'XData', [], 'YData', []);
     end
 
-    title(sprintf('Time: %.1fs  |  Evacuated: %d / %d  |  Iteration: %d', ...
+    title(ax_sim, sprintf('Time: %.1fs  |  Evacuated: %d / %d  |  Iteration: %d', ...
         sim_time, sum(arrived), N, iter), 'FontSize', 13);
+
+    % Update live evacuated agents graph (top-right panel)
+    graph_idx = graph_idx + 1;
+    graph_x(graph_idx) = iter;
+    graph_y(graph_idx) = sum(arrived);
+    set(h_graph, 'XData', graph_x(1:graph_idx), 'YData', graph_y(1:graph_idx));
 
     drawnow limitrate;
     pause(0.05);   % 50ms pause per iteration — matches PSO_Optimization.m timing
@@ -601,7 +670,7 @@ else
         sum(arrived), N, total_time);
     title_col = [0.8 0.4 0];
 end
-title(title_str, 'FontSize', 14, 'Color', title_col, 'FontWeight', 'bold');
+title(ax_sim, title_str, 'FontSize', 14, 'Color', title_col, 'FontWeight', 'bold');
 
 completed_times = evac_times(arrived);   % Times for agents that evacuated
 
@@ -622,3 +691,38 @@ end
 
 fprintf('══════════════════════════════════════════════\n');
 fprintf('\nSimulation complete.\n');
+
+% Fill bottom-right results panel with simulation statistics
+cla(ax_res);                            % Clear old content but keep axes properties
+set(ax_res, 'Color', [0.05 0.05 0.05], ...
+    'XTick', [], 'YTick', [], ...       % Keep ticks hidden
+    'Box', 'on', 'XColor', [1 1 1], 'YColor', [1 1 1]);
+
+if ~isempty(completed_times)
+    res_lines = {
+        sprintf('Total time    : %.2f sec',            total_time);
+        sprintf('Evacuated     : %d / %d  (%.1f%%)',   sum(arrived), N, 100*sum(arrived)/N);
+        sprintf('Not evacuated : %d',                  N - sum(arrived));
+        sprintf('Fastest       : %.2f sec',            min(completed_times));
+        sprintf('Slowest       : %.2f sec',            max(completed_times));
+    };
+else
+    res_lines = {
+        sprintf('Total time    : %.2f sec',            total_time);
+        sprintf('Evacuated     : %d / %d  (%.1f%%)',   sum(arrived), N, 100*sum(arrived)/N);
+        sprintf('Not evacuated : %d',                  N - sum(arrived));
+        'No agents completed evacuation.';
+    };
+end
+
+% Draw each result line — bright cyan, size 13, bold, evenly spaced
+num_lines = numel(res_lines);
+for ln = 1:num_lines
+    y_pos = 1 - (ln - 0.5) / num_lines;
+    text(ax_res, 0.05, y_pos, res_lines{ln}, ...
+        'Units', 'normalized', 'Color', [0 1 1], ...   % Bright cyan — clearly visible on dark bg
+        'FontSize', 13, 'FontWeight', 'bold', 'FontName', 'Courier New', ...
+        'VerticalAlignment', 'middle');
+end
+
+title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 14);
