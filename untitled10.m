@@ -113,14 +113,17 @@ axis(ax_sim, 'on'); grid(ax_sim, 'on');
 set(ax_sim, 'GridColor', [1 1 0], 'GridAlpha', 0.4, 'GridLineStyle', '--');
 
 % Top-right panel: live evacuated-agents graph
-ax_graph = axes('Position', [0.62 0.50 0.37 0.46]);
-title(ax_graph, 'Agents Evacuated', 'FontWeight', 'bold', 'Color', 'w', 'FontSize', 12);
-xlabel(ax_graph, 'Step',  'Color', 'w', 'FontSize', 11);
-ylabel(ax_graph, 'Count', 'Color', 'w', 'FontSize', 11);
+% Repositioned slightly smaller and higher to leave a gap below for
+% the x-axis label, preventing it from overlapping the results-panel
+% title underneath.
+ax_graph = axes('Position', [0.62 0.58 0.37 0.36]);
+title(ax_graph, 'Agents Evacuated', 'FontWeight', 'bold', 'Color', 'w', 'FontSize', 11);
+xlabel(ax_graph, 'Step',  'Color', 'w', 'FontSize', 9);
+ylabel(ax_graph, 'Count', 'Color', 'w', 'FontSize', 9);
 xlim(ax_graph, [0, max_iter]);
 ylim(ax_graph, [0, N]);
 set(ax_graph, 'Color', [0.1 0.1 0.1], 'XColor', 'w', 'YColor', 'w', ...
-    'GridColor', 'w', 'GridAlpha', 0.2, 'FontSize', 10);
+    'GridColor', 'w', 'GridAlpha', 0.2, 'FontSize', 9);
 grid(ax_graph, 'on'); hold(ax_graph, 'on');
 plot(ax_graph, [0 max_iter], [N N], 'g--', 'LineWidth', 1.2);
 h_graph = plot(ax_graph, 0, 0, 'g-', 'LineWidth', 2);
@@ -129,11 +132,13 @@ graph_y = zeros(1, max_iter);
 graph_idx = 0;
 
 % Bottom-right panel: textual results
-ax_res = axes('Position', [0.62 0.03 0.37 0.43]);
+% Positioned slightly lower so its title doesn't crowd the graph above.
+% Total vertical layout: graph 0.58-0.94, gap 0.49-0.58, results 0.05-0.49.
+ax_res = axes('Position', [0.62 0.05 0.37 0.40]);
 set(ax_res, 'Color', [0.05 0.05 0.05], 'Box', 'on', 'LineWidth', 2.5, ...
     'XColor', [1 1 1], 'YColor', [1 1 1], 'XTick', [], 'YTick', []);
 axis(ax_res, 'on');
-title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 13);
+title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 11);
 
 [H, W, ~] = size(layout);
 fprintf('  Map size: %d x %d pixels\n', W, H);
@@ -173,28 +178,6 @@ gray = rgb2gray(layout);                                     % Grayscale for thr
 
 wall_thresh = 40;                                            % Pixels darker than this are walls ← TUNE 30-60
 walls_raw = gray < wall_thresh;                              % Logical wall mask (raw)
-
-% ----------------------------------------------------------------------
-% STRIP MAP PICTOGRAMS (info "i", toilets, lifts, stair chevrons, etc.)
-% ----------------------------------------------------------------------
-% The threshold above catches every dark pixel on the JPG, which means
-% the icons drawn ON TOP of walkable floor are also flagged as walls.
-% After collision dilation they bloat into impassable islands — exactly
-% what was trapping agents in the white corridor and inside the "i".
-%
-% Real building geometry (outer walls + interior partitions + booth
-% outlines) forms LARGE connected components — thousands of pixels each.
-% Pictograms are isolated small blobs of 100–500 px. A bwareaopen with
-% threshold ~600 cleanly separates the two: icons vanish from the
-% binary mask, walls and booths survive untouched.
-%
-% Agents now pass THROUGH icons (they remain visible in the rendered
-% layout image, just not in the collision mask). Booth rectangles
-% remain solid obstacles, so no corner-cutting risk introduced.
-% ----------------------------------------------------------------------
-symbol_max_area_px = 600;                                    % Components smaller than this are pictograms ← TUNE if booth outlines vanish
-walls_raw = bwareaopen(walls_raw, symbol_max_area_px);
-fprintf('  Pictogram filter: removed components < %d px\n', symbol_max_area_px);
 
 walls = imdilate(walls_raw, strel('disk', 3));               % VISUAL/LOS wall mask (light dilation)
 
@@ -247,8 +230,8 @@ plot(ax_sim, exits(:,1), exits(:,2), 'go', ...
     'MarkerSize', 20, 'MarkerFaceColor', [0 0.9 0], ...
     'MarkerEdgeColor', [0 0.5 0], 'LineWidth', 2, 'DisplayName', 'Exits');
 for e = 1:num_exits
-    text(ax_sim, exits(e,1), exits(e,2) - 22, sprintf('Exit %d', e), ...
-        'Color', [0 0.6 0], 'FontWeight', 'bold', 'FontSize', 9, ...
+    text(ax_sim, exits(e,1), exits(e,2) - 42, sprintf('Exit %d', e), ...
+        'Color', [1 1 0], 'FontWeight', 'bold', 'FontSize', 9, ...
         'HorizontalAlignment', 'center');
 end
 fprintf('  %d exits pre-coded\n', num_exits);
@@ -473,16 +456,17 @@ los_sample_step = 4;                                         % Pixels per LOS sa
 sep_radius   = 22;                                           % Agents within this many px exert repulsion (was 16) ← TUNE
 sep_strength = 2.0;                                          % Repulsion magnitude (was 1.2) ← TUNE
 
-% Stuck-recovery + escape behaviour (LAYERED — FOUR escalating responses)
+% Stuck-recovery + escape behaviour (LAYERED — FIVE escalating responses)
 stuck_disp_eps             = 0.40;                           % Below this px movement = "not moving"
-stuck_threshold            = 40;                             % Level-1: iterations of stall before short escape (LOWERED from 60 — recovery fires earlier) ← TUNE
+stuck_threshold            = 40;                             % Level-1: iterations of stall before short escape ← TUNE
 escape_random_steps        = 15;                             % Level-1: short random walk after stuck reset ← TUNE
-deep_escape_threshold      = 2;                              % Level-2: # of Level-1 events before Level-2 (LOWERED from 3) ← TUNE
+deep_escape_threshold      = 2;                              % Level-2: # of Level-1 events before Level-2 ← TUNE
 deep_escape_steps          = 50;                             % Level-2: long random walk to break severe local minima ← TUNE
-frustration_threshold      = 120;                            % Level-3: iterations of no exit-distance progress (LOWERED from 200) ← TUNE
+frustration_threshold      = 120;                            % Level-3: iterations of no exit-distance progress
 reassign_threshold         = 250;                            % Level-4: iterations frustrated before SWITCHING to a different exit ← TUNE
+absolute_timeout_iters     = 1500;                           % Level-5: HARD timeout — agent active this many iterations gets force-arrived at nearest exit, no questions asked ← TUNE
 exit_disable_radius        = 90;                             % Stuck within this radius of exit = force-arrive (covers alley-trapped agents) ← TUNE
-exit_direct_pull_radius    = 120;                            % Within this radius of exit, OVERRIDE PSO with direct line to exit (RAISED from 80) ← TUNE
+exit_direct_pull_radius    = 120;                            % Within this radius of exit, OVERRIDE PSO with direct line to exit ← TUNE
 
 % Configuration-space "pocket" recovery — agent inside walls_collision
 % can override collision check to escape via wall_dist gradient
@@ -513,6 +497,7 @@ move_fail_counter     = zeros(N, 1);                         % Consecutive faile
 escape_event_count    = zeros(N, 1);                         % How many times this agent has entered Level-1 escape (triggers Level-2 at threshold)
 frustration_counter   = zeros(N, 1);                         % Iterations without REAL progress toward assigned exit (Level-3 trigger)
 reassign_counter      = zeros(N, 1);                         % Long-term iterations without REAL progress (Level-4 trigger — exit switch)
+alive_counter         = zeros(N, 1);                         % ABSOLUTE iteration count since spawn (Level-5 hard timeout trigger)
 
 % Best-ever distance to assigned exit per agent. Properly initialised
 % from spawn position so the first iteration's "progress" check is
@@ -628,6 +613,27 @@ for iter = 1:max_iter
         e_idx_i = agent_exit(i);                             % Permanent assigned exit
         exit_pos = exits(e_idx_i, :);
         d_to_my_exit = norm(pos(i,:) - exit_pos);
+
+        %% =====================================================
+        %% LEVEL-5 ABSOLUTE TIMEOUT (hard failsafe)
+        %% =====================================================
+        % If an agent has been alive for absolute_timeout_iters iterations
+        % without evacuating, force-arrive at its EUCLIDEAN-nearest open
+        % exit. This is a last-resort safety net for agents that survive
+        % all four levels of normal recovery — e.g., agents that get
+        % reassigned, almost reach the new exit, accumulate a few px of
+        % "progress" (resetting reassign_counter), then re-stall, ad
+        % infinitum. The 1500-iter ceiling (≈75 sim-seconds) is generous
+        % but firm.
+        alive_counter(i) = alive_counter(i) + 1;
+        if alive_counter(i) >= absolute_timeout_iters
+            nearest_e_tmo = pick_nearest_open_exit_idx(pos(i,:), exits, exit_blocked);
+            arrived(i)    = true;
+            evac_times(i) = sim_time;
+            fprintf('    [iter %d] Agent %d TIMEOUT — force-arrived at E%d after %d iters\n', ...
+                iter, i, nearest_e_tmo, alive_counter(i));
+            continue;
+        end
 
         %% =====================================================
         %% (e-1) CONFIGURATION-SPACE POCKET ESCAPE (Layer 0)
@@ -1176,11 +1182,11 @@ for ln = 1:num_lines
     y_pos = 1 - (ln - 0.5) / num_lines;
     text(ax_res, 0.05, y_pos, res_lines{ln}, ...
         'Units', 'normalized', 'Color', [0 1 1], ...
-        'FontSize', 13, 'FontWeight', 'bold', 'FontName', 'Courier New', ...
+        'FontSize', 11, 'FontWeight', 'bold', 'FontName', 'Courier New', ...
         'VerticalAlignment', 'middle');
 end
 
-title(ax_res, 'PSO + Directional Compass', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 14);
+title(ax_res, 'PSO + Directional Compass', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 11);
 
 
 %% ============================================================
