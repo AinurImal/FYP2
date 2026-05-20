@@ -61,13 +61,13 @@ set(ax_sim, 'YDir', 'reverse');
 axis(ax_sim, 'on'); grid(ax_sim, 'on');
 set(ax_sim, 'GridColor', [1 1 0], 'GridAlpha', 0.4, 'GridLineStyle', '--');
 
-ax_graph = axes('Position', [0.62 0.50 0.37 0.46]);
-title(ax_graph, 'Agents Evacuated', 'FontWeight', 'bold', 'Color', 'w', 'FontSize', 12);
-xlabel(ax_graph, 'Step',  'Color', 'w', 'FontSize', 11);
-ylabel(ax_graph, 'Count', 'Color', 'w', 'FontSize', 11);
+ax_graph = axes('Position', [0.62 0.58 0.37 0.36]);
+title(ax_graph, 'Agents Evacuated', 'FontWeight', 'bold', 'Color', 'w', 'FontSize', 11);
+xlabel(ax_graph, 'Step',  'Color', 'w', 'FontSize', 9);
+ylabel(ax_graph, 'Count', 'Color', 'w', 'FontSize', 9);
 xlim(ax_graph, [0, max_iter]); ylim(ax_graph, [0, N]);
 set(ax_graph, 'Color', [0.1 0.1 0.1], 'XColor', 'w', 'YColor', 'w', ...
-    'GridColor', 'w', 'GridAlpha', 0.2, 'FontSize', 10);
+    'GridColor', 'w', 'GridAlpha', 0.2, 'FontSize', 9);
 grid(ax_graph, 'on'); hold(ax_graph, 'on');
 plot(ax_graph, [0 max_iter], [N N], 'g--', 'LineWidth', 1.2);
 h_graph = plot(ax_graph, 0, 0, 'g-', 'LineWidth', 2);
@@ -75,11 +75,11 @@ graph_x = zeros(1, max_iter);
 graph_y = zeros(1, max_iter);
 graph_idx = 0;
 
-ax_res = axes('Position', [0.62 0.03 0.37 0.43]);
+ax_res = axes('Position', [0.62 0.05 0.37 0.40]);
 set(ax_res, 'Color', [0.05 0.05 0.05], 'Box', 'on', 'LineWidth', 2.5, ...
     'XColor', [1 1 1], 'YColor', [1 1 1], 'XTick', [], 'YTick', []);
 axis(ax_res, 'on');
-title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 13);
+title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 11);
 
 [H, W, ~] = size(layout);
 fprintf('  Map size: %d x %d pixels\n', W, H);
@@ -115,8 +115,8 @@ plot(ax_sim, exits(:,1), exits(:,2), 'go', ...
     'MarkerSize', 20, 'MarkerFaceColor', [0 0.9 0], ...
     'MarkerEdgeColor', [0 0.5 0], 'LineWidth', 2, 'DisplayName', 'Exits');
 for e = 1:num_exits
-    text(ax_sim, exits(e,1), exits(e,2) - 22, sprintf('Exit %d', e), ...
-        'Color', [0 0.6 0], 'FontWeight', 'bold', 'FontSize', 9, ...
+    text(ax_sim, exits(e,1), exits(e,2) - 42, sprintf('Exit %d', e), ...
+        'Color', [1 1 0], 'FontWeight', 'bold', 'FontSize', 9, ...
         'HorizontalAlignment', 'center');
 end
 
@@ -479,10 +479,10 @@ for ln = 1:num_lines
     y_pos = 1 - (ln - 0.5) / num_lines;
     text(ax_res, 0.05, y_pos, res_lines{ln}, ...
         'Units', 'normalized', 'Color', [0 1 1], ...
-        'FontSize', 13, 'FontWeight', 'bold', 'FontName', 'Courier New', ...
+        'FontSize', 11, 'FontWeight', 'bold', 'FontName', 'Courier New', ...
         'VerticalAlignment', 'middle');
 end
-title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 14);
+title(ax_res, 'Evacuation Results', 'FontWeight', 'bold', 'Color', [1 1 1], 'FontSize', 11);
 
 
 %% =============================================================
