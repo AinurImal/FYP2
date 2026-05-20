@@ -100,7 +100,7 @@ fprintf('Loading BCM-L2-SIM-2 map...\n');
 layout = imread('BCM-L2-SIM-2.jpg');                         % BCM Level 2 floor plan
 
 max_iter = 8000;                                             % Hard iteration cap (~400 sim-sec at 0.05s/step) ← TUNE
-N        = 30;                                               % Number of agents to spawn ← TUNE
+N        = 20;                                               % Number of agents to spawn ← TUNE
 
 fig = figure('Name', 'BCM-L2-SIM-2 — PSO + Directional Compass', ...
              'Position', [30, 30, 1400, 800]);
@@ -1034,37 +1034,63 @@ for iter = 1:max_iter
             px_a = max(1, min(W, round(pos(i,1))));
             py_a = max(1, min(H, round(pos(i,2))));
 
-            best_d = inf;
-            best_e = old_exit;
-            for e_alt = 1:num_exits
-                if exit_blocked(e_alt), continue; end
-                if e_alt == old_exit, continue; end           % Skip current assignment
-                d_alt = double(dist_fields(py_a, px_a, e_alt));
-                if d_alt < best_d
-                    best_d = d_alt;
-                    best_e = e_alt;
-                end
-            end
+            % --- GUARD 1: Don't reassign if already near current exit ---
+            % If the agent is within 100 px of its assigned exit, the
+            % stall is local (wall corner, crowding, etc) — not a "wrong
+            % exit" problem. Trust Layer 3 (force-arrive at 90 px) to
+            % handle it. Reassigning here would force a long pointless
+            % journey to a different exit when the agent is already
+            % nearly evacuated.
+            d_to_old = norm(pos(i,:) - exits(old_exit, :));
 
-            if best_e ~= old_exit && ~isinf(best_d)
-                agent_exit(i) = best_e;
-                fprintf('    [iter %d] Agent %d reassigned: E%d -> E%d (frustrated %d iters)\n', ...
-                    iter, i, old_exit, best_e, reassign_counter(i));
-                % Reset all counters and PSO state for a fresh start
-                reassign_counter(i)    = 0;
-                frustration_counter(i) = 0;
-                stuck_counter(i)       = 0;
-                escape_event_count(i)  = 0;
-                pbest_fit(i)           = inf;
-                gbest_fit(i)           = inf;
-                % Reset best-ever distance to the NEW exit's current
-                % distance — anything closer now counts as progress
-                best_exit_dist(i)      = norm(pos(i,:) - exits(best_e,:));
-                escape_remaining(i)    = 0;                  % Exit escape mode if in it
-            else
-                % No alternative exit found — just reset the counter so
-                % we don't spam reassignment attempts.
+            if d_to_old < 100
+                % Already near current exit — skip reassignment, just
+                % reset the counter and let recovery layers do their job
                 reassign_counter(i) = 0;
+            else
+                % Look for an alternative exit
+                old_geo = double(dist_fields(py_a, px_a, old_exit));
+                best_d = inf;
+                best_e = old_exit;
+                for e_alt = 1:num_exits
+                    if exit_blocked(e_alt), continue; end
+                    if e_alt == old_exit, continue; end
+                    d_alt = double(dist_fields(py_a, px_a, e_alt));
+                    if d_alt < best_d
+                        best_d = d_alt;
+                        best_e = e_alt;
+                    end
+                end
+
+                % --- GUARD 2: Only switch if alternative is MEANINGFULLY closer ---
+                % Don't switch from E4 (305 px away) to E2 (290 px away) —
+                % they're effectively the same and the agent will have
+                % wasted a long walk for nothing. Require the alternative
+                % to be at least 100 geodesic px closer than the current
+                % assignment.
+                significantly_better = ~isinf(best_d) && ...
+                                       ~isinf(old_geo) && ...
+                                       (best_d < old_geo - 100);
+
+                if best_e ~= old_exit && significantly_better
+                    agent_exit(i) = best_e;
+                    fprintf('    [iter %d] Agent %d reassigned: E%d -> E%d (was %.0fpx, now %.0fpx geodesic)\n', ...
+                        iter, i, old_exit, best_e, old_geo, best_d);
+                    % Reset frustration counters and best-ever distance
+                    % to the new exit, but DO NOT wipe pbest/gbest —
+                    % those carry useful PSO state that survives a
+                    % target change.
+                    reassign_counter(i)    = 0;
+                    frustration_counter(i) = 0;
+                    stuck_counter(i)       = 0;
+                    escape_event_count(i)  = 0;
+                    best_exit_dist(i)      = norm(pos(i,:) - exits(best_e,:));
+                    escape_remaining(i)    = 0;
+                else
+                    % No worthwhile alternative — reset counter, let
+                    % the lower recovery layers continue trying.
+                    reassign_counter(i) = 0;
+                end
             end
         end
 
@@ -1088,7 +1114,7 @@ for iter = 1:max_iter
     set(h_graph, 'XData', graph_x(1:graph_idx), 'YData', graph_y(1:graph_idx));
 
     drawnow limitrate;
-    pause(0.02);
+    pause(0.01);
 
     if mod(iter, 500) == 0
         % Report exit usage using each agent's ACTUAL ASSIGNED exit
@@ -1165,7 +1191,6 @@ if ~isempty(completed_times)
     res_lines = {
         sprintf('Total time    : %.2f sec',            total_time);
         sprintf('Evacuated     : %d / %d  (%.1f%%)',   sum(arrived), N, 100*sum(arrived)/N);
-        sprintf('Exit usage    : E1=%d E2=%d E3=%d E4=%d', exit_counts(1), exit_counts(2), exit_counts(3), exit_counts(4));
         sprintf('Fastest       : %.2f sec',            min(completed_times));
         sprintf('Slowest       : %.2f sec',            max(completed_times));
     };
